@@ -1,0 +1,32 @@
+import pandas as pd
+from sklearn.ensemble import RandomForestRegressor
+
+def get_prediction(mag, plasma, kp):
+    mag["bz"] = pd.to_numeric(mag.get("bz", 0), errors="coerce")
+    mag["bt"] = pd.to_numeric(mag.get("bt", 0), errors="coerce")
+    plasma["speed"] = pd.to_numeric(plasma.get("speed", 400), errors="coerce")
+    plasma["density"] = pd.to_numeric(plasma.get("density", 5), errors="coerce")
+    kp["kp"] = pd.to_numeric(kp["kp"], errors="coerce")
+
+    for df in [mag, plasma, kp]:
+        df["time_tag"] = pd.to_datetime(df["time_tag"])
+
+    solar = pd.merge_asof(mag.sort_values("time_tag"), plasma.sort_values("time_tag"), on="time_tag")
+    data = pd.merge_asof(solar.sort_values("time_tag"), kp.sort_values("time_tag"), on="time_tag").dropna()
+
+    if len(data) < 20:
+        return 2.5, 400, 5
+
+    data["kp_future"] = data["kp"].shift(-8)
+    data = data.dropna()
+
+    features = data[["bz","bt","density","speed"]]
+    target = data["kp_future"]
+
+    model = RandomForestRegressor(n_estimators=80)
+    model.fit(features, target)
+
+    latest = features.iloc[-1].values.reshape(1,-1)
+    prediction = model.predict(latest)[0]
+
+    return round(prediction,2), float(features.iloc[-1]["speed"]), float(features.iloc[-1]["density"])
