@@ -1,0 +1,26 @@
+import requests
+import pandas as pd
+
+def get_json(url):
+    try:
+        return requests.get(url, timeout=10).json()
+    except:
+        return None
+
+def fetch_and_clean():
+    mag_json = get_json("https://services.swpc.noaa.gov/products/solar-wind/mag-7-day.json")
+    plasma_json = get_json("https://services.swpc.noaa.gov/products/solar-wind/plasma-7-day.json")
+    kp_json = get_json("https://services.swpc.noaa.gov/products/noaa-planetary-k-index.json")
+
+    if not mag_json or not plasma_json or not kp_json:
+        return None
+
+    mag = pd.DataFrame(mag_json[1:], columns=mag_json[0])
+    plasma = pd.DataFrame(plasma_json[1:], columns=plasma_json[0])
+    kp = pd.DataFrame(kp_json[1:], columns=kp_json[0])
+
+    mag.columns = [c.lower() for c in mag.columns]
+    plasma.columns = [c.lower() for c in plasma.columns]
+    kp.columns = [c.lower() for c in kp.columns]
+
+    return mag, plasma, kp
