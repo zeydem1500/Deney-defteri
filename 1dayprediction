@@ -1,0 +1,154 @@
+from flask import Flask, render_template
+import requests
+import pandas as pd
+from sklearn.ensemble import RandomForestRegressor
+
+app = Flask(_name_)
+
+def get_prediction():
+
+    # -----------------------------
+    # VERİ ÇEK
+    # -----------------------------
+    def get_json(url):
+        try:
+            return requests.get(url, timeout=10).json()
+        except:
+            print("Veri çekilemedi:", url)
+            return None
+
+    mag_json = get_json("https://services.swpc.noaa.gov/products/solar-wind/mag-7-day.json")
+    plasma_json = get_json("https://services.swpc.noaa.gov/products/solar-wind/plasma-7-day.json")
+    kp_json = get_json("https://services.swpc.noaa.gov/products/noaa-planetary-k-index.json")
+
+    if not mag_json or not plasma_json or not kp_json:
+        return 2.5  # fallback
+
+    mag = pd.DataFrame(mag_json[1:], columns=mag_json[0])
+    plasma = pd.DataFrame(plasma_json[1:], columns=plasma_json[0])
+    kp = pd.DataFrame(kp_json[1:], columns=kp_json[0])
+
+    # -----------------------------
+    # SÜTUN TEMİZLİK
+    # -----------------------------
+    mag.columns = [c.lower() for c in mag.columns]
+    plasma.columns = [c.lower() for c in plasma.columns]
+    kp.columns = [c.lower() for c in kp.columns]
+
+    # bz / bt fix
+    if "bz_gsm" not in mag.columns:
+        print("bz_gsm yok → 0 atanıyor")
+        mag["bz_gsm"] = 0
+
+    if "bt" not in mag.columns:
+        print("bt yok → 0 atanıyor")
+        mag["bt"] = 0
+
+    mag["bz_gsm"] = pd.to_numeric(mag["bz_gsm"], errors="coerce")
+    mag["bt"] = pd.to_numeric(mag["bt"], errors="coerce")
+
+    # plasma fix
+    if "speed" not in plasma.columns:
+        print("speed yok → 400 atanıyor")
+        plasma["speed"] = 400
+
+    if "density" not in plasma.columns:
+        print("density yok → 5 atanıyor")
+        plasma["density"] = 5
+
+    plasma["speed"] = pd.to_numeric(plasma["speed"], errors="coerce")
+    plasma["density"] = pd.to_numeric(plasma["density"], errors="coerce")
+
+    # kp fix
+    if "kp" not in kp.columns:
+        print("kp yok → fallback")
+        return 2.5
+
+    kp["kp"] = pd.to_numeric(kp["kp"], errors="coerce")
+
+    # -----------------------------
+    # ZAMAN
+    # -----------------------------
+    for df in [mag, plasma, kp]:
+        if "time_tag" not in df.columns:
+            print("time_tag eksik")
+            return 2.5
+        df["time_tag"] = pd.to_datetime(df["time_tag"])
+
+    # -----------------------------
+    # BİRLEŞTİR
+    # -----------------------------
+    solar = pd.merge_asof(
+        mag.sort_values("time_tag"),
+        plasma.sort_values("time_tag"),
+        on="time_tag"
+    )
+
+    data = pd.merge_asof(
+        solar.sort_values("time_tag"),
+        kp.sort_values("time_tag"),
+        on="time_tag"
+    )
+
+    data = data.dropna()
+
+    if len(data) < 20:
+        print("Yetersiz veri")
+        return 2.5
+
+    # -----------------------------
+    # FEATURE ENGINEERING
+    # -----------------------------
+    data["bz_gsm_lag1"] = data["bz_gsm"].shift(1)
+    data["speed_lag1"] = data["speed"].shift(1)
+    data["kp_lag1"] = data["kp"].shift(1)
+
+    data["bz_gsm_avg"] = data["bz_gsm"].rolling(3).mean()
+    data["speed_avg"] = data["speed"].rolling(3).mean()
+
+    data = data.dropna()
+
+    # GELECEK KP
+    data["kp_future"] = data["kp"].shift(-8)
+    data = data.dropna()
+
+    features = data[[
+        "bz_gsm", "bt", "density", "speed",
+        "bz_gsm_lag1", "speed_lag1", "kp_lag1",
+        "bz_gsm_avg", "speed_avg"
+    ]]
+
+    target = data["kp_future"]
+
+    # -----------------------------
+    # MODEL
+    # -----------------------------
+    model = RandomForestRegressor(n_estimators=200)
+    model.fit(features, target)
+
+    # -----------------------------
+    # TAHMİN
+    # -----------------------------
+    latest = features.iloc[-1].values.reshape(1, -1)
+    prediction = model.predict(latest)[0]
+
+    return round(prediction, 2)
+
+
+@app.route("/")
+def home():
+    kp_value = get_prediction()
+
+    if kp_value < 3:
+        status = "Sakin 🌿"
+        print(kp_value)
+    elif kp_value < 5:
+        status = "Orta ⚠️"
+    else:
+        status = "Fırtına Riski 🚨"
+
+    return render_template("index.html", kp=kp_value, status=status)
+
+
+if _name_ == "_main_":
+    app.run(debug=True)
