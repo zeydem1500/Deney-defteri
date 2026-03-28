@@ -1,0 +1,17 @@
+from flask import Flask, jsonify, render_template
+
+app = Flask(__name__)
+
+@app.route("/")
+def home():
+    # Sadece ana sayfayı (arayüzü) döndürür
+    return render_template("index.html")
+
+@app.route("/data")
+def data_endpoint():
+    # Analiz sonuçlarını JSON (veri paketi) olarak sunar
+    results = process_all_data() # Tüm süreci yöneten ana fonksiyon
+    return jsonify(results)
+
+if __name__ == "__main__":
+    app.run(debug=True)
