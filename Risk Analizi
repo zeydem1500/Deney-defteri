@@ -1,0 +1,29 @@
+def get_levels(kp, speed, density):
+    # R seviyesi (Radyasyon)
+    R = "R" + str(min(5, int(kp/2))) if kp >= 5 else "R0"
+    
+    # G seviyesi (Jeomanyetik)
+    if speed > 700: G="G3"
+    elif speed > 600: G="G2"
+    elif speed > 500: G="G1"
+    else: G="G0"
+
+    # S seviyesi (Parçacık Yoğunluğu)
+    if density > 20: S="S3"
+    elif density > 10: S="S2"
+    elif density > 5: S="S1"
+    else: S="S0"
+
+    return R, G, S
+
+def get_risk_info(kp):
+    if kp >= 7:
+        text = "Uydu arızaları, GPS hataları ve aurora gözlemleri artar."
+        precaution = "Uydu sistemlerini koruma moduna alın, kritik iletişimleri yedekleyin."
+    elif kp >= 5:
+        text = "Hafif iletişim bozulmaları ve düşük seviyeli aurora görülebilir."
+        precaution = "Hassas sistemleri izleyin, uzun süreli operasyonlardan kaçının."
+    else:
+        text = "Ciddi bir risk yok, sistem stabil."
+        precaution = "Özel önlem gerekmez."
+    return text, precaution
